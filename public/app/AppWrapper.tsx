@@ -20,6 +20,7 @@ import { RouteDescriptor } from './core/navigation/types';
 import { contextSrv } from './core/services/context_srv';
 import { ThemeProvider } from './core/utils/ConfigProvider';
 import { LiveConnectionWarning } from './features/live/LiveConnectionWarning';
+import { Modal } from '../../packages/grafana-ui/src/components/Modal/Modal';
 
 interface AppWrapperProps {
   app: GrafanaApp;
@@ -27,6 +28,7 @@ interface AppWrapperProps {
 
 interface AppWrapperState {
   ready?: boolean;
+  notification?: boolean;
 }
 
 /** Used by enterprise */
@@ -49,7 +51,7 @@ export class AppWrapper extends React.Component<AppWrapperProps, AppWrapperState
 
   async componentDidMount() {
     await loadAndInitAngularIfEnabled();
-    this.setState({ ready: true });
+    this.setState({ ready: true, notification: true });
     $('.preloader').remove();
   }
 
@@ -113,6 +115,22 @@ export class AppWrapper extends React.Component<AppWrapperProps, AppWrapperState
                           ))}
                           <AngularRoot />
                           <AppNotificationList />
+                          {
+                            ready && this.state.notification && contextSrv.user?.orgId && [1, 7, 8, 10].indexOf(contextSrv.user?.orgId) == -1 &&
+                            <Modal
+                              onDismiss={()=>{
+                                this.setState({ready: true,notification: false});
+                              }}
+                              isOpen={true}
+                              title="Important Announcement">
+                              {
+                              <div>
+                                the current Grafana instance shared between XPay and MSAP teams will be used execlusively for XPay. For MSAP team members please head to the new instance URL: <a style={{textDecoration: 'underline', color: 'burlywood'}} href={`https://msap-grafana.microsoft.com/${window.location.href.split("/").slice(3).join('/')}`}>{`https://msap-grafana.microsoft.com/${window.location.href.split("/").slice(3).join('/')}`}</a>. For any inquiries reach out to muhesham@microsoft.com
+                              </div>
+                              }
+                            </Modal>
+                          }
+
                           {ready && this.renderRoutes()}
                           {bodyRenderHooks.map((Hook, index) => (
                             <Hook key={index.toString()} />
