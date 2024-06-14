@@ -10,9 +10,9 @@ import {
   RadioButtonGroup,
   TagsInput,
   Label,
-  HorizontalGroup,
   TextArea,
   Box,
+  Stack,
   Switch
 } from '@grafana/ui';
 import { Page } from 'app/core/components/Page/Page';
@@ -130,15 +130,13 @@ export function GeneralSettingsUnconnected({
         <Box marginBottom={5}>
           <Field
             label={
-              <HorizontalGroup justify="space-between">
+              <Stack justifyContent="space-between">
                 <Label htmlFor="title-input">
                   <Trans i18nKey="dashboard-settings.general.title-label">Title</Trans>
                 </Label>
 
-                {config.featureToggles.dashgpt && (
-                  <GenAIDashTitleButton onGenerate={onTitleChange} dashboard={dashboard} />
-                )}
-              </HorizontalGroup>
+                {config.featureToggles.dashgpt && <GenAIDashTitleButton onGenerate={onTitleChange} />}
+              </Stack>
             }
           >
             <Input
@@ -150,15 +148,13 @@ export function GeneralSettingsUnconnected({
           </Field>
           <Field
             label={
-              <HorizontalGroup justify="space-between">
+              <Stack justifyContent="space-between">
                 <Label htmlFor="description-input">
                   {t('dashboard-settings.general.description-label', 'Description')}
                 </Label>
 
-                {config.featureToggles.dashgpt && (
-                  <GenAIDashDescriptionButton onGenerate={onDescriptionChange} dashboard={dashboard} />
-                )}
-              </HorizontalGroup>
+                {config.featureToggles.dashgpt && <GenAIDashDescriptionButton onGenerate={onDescriptionChange} />}
+              </Stack>
             }
           >
             <TextArea

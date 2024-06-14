@@ -1,6 +1,4 @@
 ---
-aliases:
-  - ../../provision-alerting-resources/file-provisioning/
 canonical: https://grafana.com/docs/grafana/latest/alerting/set-up/provision-alerting-resources/file-provisioning/
 description: Create and manage resources using file provisioning
 keywords:
@@ -593,7 +591,7 @@ templates:
   - orgId: 1
     # <string, required> name of the template, must be unique
     name: my_first_template
-    # <string, required> content of the the template
+    # <string, required> content of the template
     template: |
       {{ define "my_first_template" }}
         Custom notification message
@@ -706,46 +704,6 @@ apiVersion: 1
 # List of orgIds that should be reset to the default policy
 resetPolicies:
   - 1
-```
-
-## Import templates
-
-Create or delete templates in your Grafana instance(s).
-
-1. Create a YAML or JSON configuration file.
-
-   Example configuration files can be found below.
-
-1. Add the file(s) to your GitOps workflow, so that they deploy alongside your Grafana instance(s).
-
-Here is an example of a configuration file for creating templates.
-
-```yaml
-# config file version
-apiVersion: 1
-
-# List of templates to import or update
-templates:
-  # <int> organization ID, default = 1
-  - orgId: 1
-    # <string, required> name of the template, must be unique
-    name: my_first_template
-    # <string, required> content of the template
-    template: Alerting with a custom text template
-```
-
-Here is an example of a configuration file for deleting templates.
-
-```yaml
-# config file version
-apiVersion: 1
-
-# List of alert rule UIDs that should be deleted
-deleteTemplates:
-  # <int> organization ID, default = 1
-  - orgId: 1
-    # <string, required> name of the template, must be unique
-    name: my_first_template
 ```
 
 ## Import mute timings

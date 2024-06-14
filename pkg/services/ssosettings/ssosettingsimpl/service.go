@@ -12,9 +12,11 @@ import (
 	"github.com/grafana/grafana/pkg/infra/db"
 	"github.com/grafana/grafana/pkg/infra/log"
 	"github.com/grafana/grafana/pkg/infra/usagestats"
+	"github.com/grafana/grafana/pkg/login/social"
 	ac "github.com/grafana/grafana/pkg/services/accesscontrol"
 	"github.com/grafana/grafana/pkg/services/auth/identity"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
+	"github.com/grafana/grafana/pkg/services/licensing"
 	"github.com/grafana/grafana/pkg/services/secrets"
 	"github.com/grafana/grafana/pkg/services/ssosettings"
 	"github.com/grafana/grafana/pkg/services/ssosettings/api"
@@ -35,29 +37,40 @@ type Service struct {
 	secrets secrets.Service
 	metrics *metrics
 
-	fbStrategies []ssosettings.FallbackStrategy
-	reloadables  map[string]ssosettings.Reloadable
+	fbStrategies  []ssosettings.FallbackStrategy
+	providersList []string
+	reloadables   map[string]ssosettings.Reloadable
 }
 
 func ProvideService(cfg *setting.Cfg, sqlStore db.DB, ac ac.AccessControl,
 	routeRegister routing.RouteRegister, features featuremgmt.FeatureToggles,
-	secrets secrets.Service, usageStats usagestats.Service, registerer prometheus.Registerer) *Service {
-	strategies := []ssosettings.FallbackStrategy{
+	secrets secrets.Service, usageStats usagestats.Service, registerer prometheus.Registerer,
+	settingsProvider setting.Provider, licensing licensing.Licensing) *Service {
+	fbStrategies := []ssosettings.FallbackStrategy{
 		strategies.NewOAuthStrategy(cfg),
-		// register other strategies here, for example SAML
+	}
+
+	providersList := ssosettings.AllOAuthProviders
+	if licensing.FeatureEnabled(social.SAMLProviderName) {
+		fbStrategies = append(fbStrategies, strategies.NewSAMLStrategy(settingsProvider))
+
+		if cfg.SSOSettingsConfigurableProviders[social.SAMLProviderName] {
+			providersList = append(providersList, social.SAMLProviderName)
+		}
 	}
 
 	store := database.ProvideStore(sqlStore)
 
 	svc := &Service{
-		logger:       log.New("ssosettings.service"),
-		cfg:          cfg,
-		store:        store,
-		ac:           ac,
-		fbStrategies: strategies,
-		secrets:      secrets,
-		metrics:      newMetrics(registerer),
-		reloadables:  make(map[string]ssosettings.Reloadable),
+		logger:        log.New("ssosettings.service"),
+		cfg:           cfg,
+		store:         store,
+		ac:            ac,
+		fbStrategies:  fbStrategies,
+		secrets:       secrets,
+		metrics:       newMetrics(registerer),
+		providersList: providersList,
+		reloadables:   make(map[string]ssosettings.Reloadable),
 	}
 
 	usageStats.RegisterMetricsFunc(svc.getUsageStats)
@@ -114,14 +127,14 @@ func (s *Service) GetForProviderWithRedactedSecrets(ctx context.Context, provide
 }
 
 func (s *Service) List(ctx context.Context) ([]*models.SSOSettings, error) {
-	result := make([]*models.SSOSettings, 0, len(ssosettings.AllOAuthProviders))
+	result := make([]*models.SSOSettings, 0, len(s.providersList))
 	storedSettings, err := s.store.List(ctx)
 
 	if err != nil {
 		return nil, err
 	}
 
-	for _, provider := range ssosettings.AllOAuthProviders {
+	for _, provider := range s.providersList {
 		dbSettings := getSettingByProvider(provider, storedSettings)
 		if dbSettings != nil {
 			// Settings are coming from the database thus secrets are encrypted
@@ -298,7 +311,7 @@ func (s *Service) getFallbackStrategyFor(provider string) (ssosettings.FallbackS
 func (s *Service) encryptSecrets(ctx context.Context, settings, storedSettings map[string]any) (map[string]any, error) {
 	result := make(map[string]any)
 	for k, v := range settings {
-		if isSecret(k) && v != "" {
+		if IsSecretField(k) && v != "" {
 			strValue, ok := v.(string)
 			if !ok {
 				return result, fmt.Errorf("failed to encrypt %s setting because it is not a string: %v", k, v)
@@ -352,9 +365,14 @@ func (s *Service) doReload(ctx context.Context) {
 	}
 
 	for provider, connector := range s.reloadables {
-		setting := getSettingByProvider(provider, settingsList)
+		settings := getSettingByProvider(provider, settingsList)
 
-		err = connector.Reload(ctx, *setting)
+		if settings == nil || len(settings.Settings) == 0 {
+			s.logger.Warn("SSO Settings is empty", "provider", provider)
+			continue
+		}
+
+		err = connector.Reload(ctx, *settings)
 		if err != nil {
 			s.metrics.reloadFailures.WithLabelValues(provider).Inc()
 			s.logger.Error("failed to reload SSO Settings", "provider", provider, "err", err)
@@ -387,7 +405,7 @@ func (s *Service) mergeSSOSettings(dbSettings, systemSettings *models.SSOSetting
 
 func (s *Service) decryptSecrets(ctx context.Context, settings map[string]any) (map[string]any, error) {
 	for k, v := range settings {
-		if isSecret(k) && v != "" {
+		if IsSecretField(k) && v != "" {
 			strValue, ok := v.(string)
 			if !ok {
 				s.logger.Error("Failed to parse secret value, it is not a string", "key", k)
@@ -422,7 +440,7 @@ func (s *Service) isProviderConfigurable(provider string) bool {
 func removeSecrets(settings map[string]any) map[string]any {
 	result := make(map[string]any)
 	for k, v := range settings {
-		if isSecret(k) {
+		if IsSecretField(k) {
 			result[k] = setting.RedactedPassword
 			continue
 		}
@@ -461,7 +479,7 @@ func mergeSettings(storedSettings, systemSettings map[string]any) map[string]any
 func collectSecrets(settings *models.SSOSettings, storedSettings *models.SSOSettings) map[string]any {
 	secrets := map[string]any{}
 	for k, v := range settings.Settings {
-		if isSecret(k) {
+		if IsSecretField(k) {
 			if isNewSecretValue(v.(string)) {
 				secrets[k] = v.(string) // use the new value
 				continue
@@ -482,7 +500,8 @@ func overrideMaps(maps ...map[string]any) map[string]any {
 	return result
 }
 
-func isSecret(fieldName string) bool {
+// IsSecretField returns true if the SSO settings field provided is a secret
+func IsSecretField(fieldName string) bool {
 	secretFieldPatterns := []string{"secret"}
 
 	for _, v := range secretFieldPatterns {

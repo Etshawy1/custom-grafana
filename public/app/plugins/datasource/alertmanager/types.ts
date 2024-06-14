@@ -157,6 +157,7 @@ export type AlertmanagerConfig = {
   inhibit_rules?: InhibitRule[];
   receivers?: Receiver[];
   mute_time_intervals?: MuteTimeInterval[];
+  time_intervals?: MuteTimeInterval[];
   /** { [name]: provenance } */
   muteTimeProvenances?: Record<string, string>;
   last_applied?: boolean;
@@ -217,11 +218,7 @@ export type AlertmanagerAlert = {
   generatorURL?: string;
   labels: { [key: string]: string };
   annotations: { [key: string]: string };
-  receivers: [
-    {
-      name: string;
-    },
-  ];
+  receivers: Array<{ name: string }>;
   fingerprint: string;
   status: {
     state: AlertState;
